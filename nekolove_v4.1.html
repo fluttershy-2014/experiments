@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Влюбленная Неко - Финальная Сборка</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background: #ffe6f0; }
+        canvas { display: block; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
+        #menu { pointer-events: auto; text-align: center; background: rgba(255, 255, 255, 0.95); padding: 40px; border-radius: 30px; box-shadow: 0 0 30px rgba(255, 105, 180, 0.6); border: 3px solid #ff4d94; }
+        h1 { color: #ff0066; font-size: 48px; margin-bottom: 10px; }
+        button { padding: 15px 40px; font-size: 20px; background: #ff4d94; color: white; border: none; border-radius: 50px; cursor: pointer; transition: 0.3s; pointer-events: auto; }
+        button:hover { background: #ff0066; transform: scale(1.05); }
+        #timer-container { position: absolute; top: 20px; left: 20px; background: rgba(255, 255, 255, 0.9); border: 3px solid #ff0066; border-radius: 15px; padding: 10px 20px; display: none; }
+        #timer { font-size: 32px; color: #ff0000; font-weight: bold; text-align: center; }
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; background: rgba(0,0,0,0.5); }
+        #ending-title { font-size: 50px; color: white; font-weight: bold; margin-bottom: 20px; text-shadow: 0 0 15px black; }
+
+        /* Зоны для мобильного управления */
+        #mobile-ui { position: absolute; bottom: 0; left: 0; width: 100%; height: 100%; z-index: 5; display: none; pointer-events: none; }
+        #joy-zone, #look-zone { pointer-events: auto; }
+        #joy-zone { position: absolute; bottom: 40px; left: 40px; width: 100px; height: 100px; background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; }
+        #look-zone { position: absolute; top: 0; right: 0; width: 60%; height: 100%; }
+
+        #note-ui { 
+            position: absolute; 
+            top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); 
+            background: #fffef0; 
+            padding: 0; 
+            border: 2px solid #ffb3d1; 
+            box-shadow: 8px 8px 0px rgba(255, 179, 209, 0.3);
+            display: none; 
+            z-index: 200; 
+            width: 320px; 
+            text-align: center;
+            font-family: 'Comic Sans MS', cursive;
+            color: #444;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+        #note-header {
+            background: #ffb3d1;
+            color: white;
+            padding: 10px;
+            font-weight: bold;
+            font-size: 20px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+        #note-content {
+            padding: 20px;
+            line-height: 1.5;
+        }
+        #note-prompt {
+            position: absolute;
+            bottom: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 15px;
+            border-radius: 10px;
+            display: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui-layer">
+        <div id="mobile-ui">
+            <div id="joy-zone"></div>
+            <div id="look-zone"></div>
+        </div>
+
+        <div id="note-prompt">Нажми [E], чтобы прочитать записку</div>
+        <div id="note-ui">
+            <div id="note-text"></div>
+            <p style="font-size: 12px; color: #888; margin-top: 20px;">(ЛКМ, чтобы отложить)</p>
+        </div>
+
+        <div id="menu">
+            <h1>Влюбленная Неко</h1>
+            <p style="color: #ff4d94; font-weight: bold;">Осталось 60 секунд до звонка...</p>
+            <p>W,A,S,D — Ходьба | Мышь — Обзор</p>
+            <p style="font-style: italic; color: #777;">Твоя судьба решится сейчас.</p>
+            <button id="start-btn">Начать игру</button>
+        </div>
+        <div id="timer-container">
+            <div style="font-size: 18px; color: #ff0066; text-align: center; font-weight: bold;">До звонка:</div>
+            <div id="timer">60</div>
+        </div>
+        <div id="overlay">
+            <div id="ending-title"></div>
+            <button onclick="location.reload()">Играть заново</button>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        import { Reflector } from 'three/addons/objects/Reflector.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        let scene, camera, renderer, controls, nekoModel, mixer, timerInterval, mirror;
+        let hearts;
+        let timeLeft = 60;
+        let isGameOver = false;
+        let keys = { w: false, a: false, s: false, d: false };
+        let collidables = [];
+
+        let paper, raycaster, mouse;
+        let isReading = false;
+        const interactDist = 2.5;
+
+        const clock = new THREE.Clock();
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        let lastT = 0;
+
+        let listener, bgMusic, audioLoader;
+
+        // Переменные для моргания
+        let blinkTimer = 0;
+        let nextBlink = 2;
+        let blinkState = 0; // 0 - открыты, 1 - закрываются, 2 - открываются
+
+        init();
+        animate();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xfff0f5);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.6, 3);
+
+            listener = new THREE.AudioListener();
+            camera.add(listener);
+            audioLoader = new THREE.AudioLoader();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 0.8;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new PointerLockControls(camera, document.body);
+
+            window.addEventListener('keydown', (e) => { 
+                const k = e.code.toLowerCase().replace('key','');
+                if(k in keys) keys[k] = true; 
+            });
+            window.addEventListener('keyup', (e) => { 
+                const k = e.code.toLowerCase().replace('key','');
+                if(k in keys) keys[k] = false; 
+            });
+            
+            window.addEventListener('mousedown', () => {
+                if (isReading) {
+                    closeNote();
+                } else if (!controls.isLocked && !isGameOver && document.getElementById('menu').style.display === 'none') {
+                    controls.lock();
+                }
+            });
+
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'KeyE' && !isGameOver) {
+                    tryReadNote();
+                }
+            });
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const sun = new THREE.DirectionalLight(0xffffff, 0.5);
+            sun.position.set(5, 10, 5);
+            sun.castShadow = true;
+            sun.shadow.mapSize.width = 1024;
+            sun.shadow.mapSize.height = 1024;
+            scene.add(sun);
+
+            createRoom();
+            loadNekoModel();
+
+            const startBtn = document.getElementById('start-btn');
+            startBtn.addEventListener('click', startGame);
+
+            if ('ontouchstart' in window) {
+                document.getElementById('mobile-ui').style.display = 'block';
+                const jZ = document.getElementById('joy-zone');
+                const lZ = document.getElementById('look-zone');
+                jZ.addEventListener('touchstart', (e) => { e.preventDefault(); keys.w = true; });
+                jZ.addEventListener('touchend', (e) => { e.preventDefault(); keys.w = false; });
+                lZ.addEventListener('touchstart', (e) => { lastT = e.touches[0].clientX; });
+                lZ.addEventListener('touchmove', (e) => {
+                    const dx = e.touches[0].clientX - lastT;
+                    lastT = e.touches[0].clientX;
+                    camera.rotation.y -= dx * 0.005;
+                });
+            }
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2(0, 0);
+        }
+
+        function createObject(geo, mat, pos) {
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(...pos);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+            collidables.push(mesh);
+            return mesh;
+        }
+
+        function createRoom() {
+            // 1. ПОЛ
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({color: 0xeeeeee}));
+            floor.rotation.x = -Math.PI/2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // 2. СТЕНЫ
+            const wallMat = new THREE.MeshStandardMaterial({color: 0xffccd5});
+            [[-5,2,0, 0.2,4,10], [5,2,0, 0.2,4,10], [0,2,-5.95, 10,4,2.0], [0,2,5, 10,4,0.2]].forEach(p => {
+                const w = new THREE.Mesh(new THREE.BoxGeometry(p[3], p[4], p[5]), wallMat);
+                w.position.set(p[0], p[1], p[2]);
+                w.receiveShadow = true;
+                scene.add(w);
+                collidables.push(w);
+            });
+
+            // Вспомогательная функция для текстуры дерева
+            function getWoodMat(color1, color2) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 128; canvas.height = 128;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = color1; ctx.fillRect(0, 0, 128, 128);
+                ctx.strokeStyle = color2; ctx.lineWidth = 4;
+                for(let i=0; i<128; i+=8) { ctx.strokeRect(i, 0, 2, 128); }
+                const tex = new THREE.CanvasTexture(canvas);
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 });
+            }
+
+            const darkWood = getWoodMat('#8B4513', '#4A2508');
+            const lightWood = getWoodMat('#D2B48C', '#A52A2A');
+
+            // 3. КРОВАТЬ
+            const bedGroup = new THREE.Group();
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.4, 4.6), darkWood);
+            frame.position.y = 0.3; frame.castShadow = true; frame.receiveShadow = true;
+            bedGroup.add(frame);
+            const back = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.5, 0.15), darkWood);
+            back.position.set(0, 0.75, -2.25); back.castShadow = true;
+            bedGroup.add(back);
+            const mattress = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.3, 4.4), new THREE.MeshStandardMaterial({color: 0xffc1e3}));
+            mattress.position.y = 0.6; mattress.receiveShadow = true;
+            bedGroup.add(mattress);
+            bedGroup.position.set(-3.5, 0, -1);
+            scene.add(bedGroup);
+            createObject(new THREE.BoxGeometry(2.7, 1.5, 4.7), new THREE.MeshBasicMaterial({visible:false}), [-3.5, 0.75, -1]);
+
+            // 4. ШКАФ
+            const wardGroup = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3.8, 4), lightWood);
+            body.castShadow = true; body.receiveShadow = true;
+            wardGroup.add(body);
+            const handleGeo = new THREE.BoxGeometry(0.05, 0.4, 0.05);
+            const handleMat = new THREE.MeshStandardMaterial({color: 0xffd700, metalness: 0.8, roughness: 0.2});
+            const h1 = new THREE.Mesh(handleGeo, handleMat); h1.position.set(-0.82, 0, 0.5); wardGroup.add(h1);
+            const h2 = new THREE.Mesh(handleGeo, handleMat); h2.position.set(-0.82, 0, -0.5); wardGroup.add(h2);
+            wardGroup.position.set(4.1, 1.9, 0.5);
+            scene.add(wardGroup);
+            createObject(new THREE.BoxGeometry(1.7, 3.9, 4.1), new THREE.MeshBasicMaterial({visible:false}), [4.1, 1.9, 0.5]);
+
+            // 5. ПОЛКА / СТОЛИК
+            const shelfGroup = new THREE.Group();
+            const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.1, 0.8), darkWood);
+            shelf.position.y = 0.7; shelf.castShadow = true; shelf.receiveShadow = true;
+            shelfGroup.add(shelf);
+            const legGeo = new THREE.BoxGeometry(0.05, 0.7, 0.05);
+            [[0.55, 0.35, 0.35], [-0.55, 0.35, 0.35], [0.55, 0.35, -0.35], [-0.55, 0.35, -0.35]].forEach(p => {
+                const leg = new THREE.Mesh(legGeo, darkWood);
+                leg.position.set(...p); leg.castShadow = true;
+                shelfGroup.add(leg);
+            });
+            shelfGroup.position.set(2.5, 0, -4.5); 
+            scene.add(shelfGroup);
+            createObject(new THREE.BoxGeometry(1.2, 0.8, 0.8), new THREE.MeshBasicMaterial({visible: false}), [2.5, 0.4, -4.5]);
+
+            // 6. ЗЕРКАЛО
+            mirror = new Reflector(new THREE.PlaneGeometry(2.5, 3.5), {
+                textureWidth: window.innerWidth * window.devicePixelRatio,
+                textureHeight: window.innerHeight * window.devicePixelRatio,
+                color: 0x888888
+            });
+            mirror.position.set(0, 1.8, -4.92);
+            scene.add(mirror);
+
+            // Декоративная лампа на потолке
+            const lampGroup = new THREE.Group();
+            
+            // Основание (крепление к потолку)
+            const base = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.2, 0.2, 0.05, 16),
+                new THREE.MeshStandardMaterial({color: 0x222222})
+            );
+            base.position.y = 3.98;
+            lampGroup.add(base);
+
+            // Провод
+            const cable = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.01, 0.01, 0.3, 8),
+                new THREE.MeshStandardMaterial({color: 0x111111})
+            );
+            cable.position.y = 3.85;
+            lampGroup.add(cable);
+
+            // Абажур
+            const shade = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.1, 0.4, 0.5, 32, 1, true),
+                new THREE.MeshStandardMaterial({color: 0xffffff, side: THREE.DoubleSide})
+            );
+            shade.position.y = 3.5;
+            lampGroup.add(shade);
+
+            // Лампочка (просто белая сфера)
+            // Лампочка с эффектом свечения (желтая)
+            const bulb = new THREE.Mesh(
+                new THREE.SphereGeometry(0.12, 16, 16),
+                new THREE.MeshStandardMaterial({
+                    color: 0xffff00,        // Основной цвет
+                    emissive: 0xffcc00,     // Цвет "свечения"
+                    emissiveIntensity: 2,   // Интенсивность (можно подкрутить от 1 до 5)
+                    roughness: 0,
+                    metalness: 0
+                })
+            );
+            bulb.position.y = 3.5;
+            lampGroup.add(bulb);
+
+            scene.add(lampGroup);
+
+
+            
+            // 8. СТИКЕР НА СТОЛЕ
+            const stickerCanvas = document.createElement('canvas');
+            stickerCanvas.width = 64; stickerCanvas.height = 64;
+            const sCtx = stickerCanvas.getContext('2d');
+            sCtx.fillStyle = '#fff44f'; sCtx.fillRect(0, 0, 64, 64);
+            const stickerTex = new THREE.CanvasTexture(stickerCanvas);
+            paper = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.005, 0.2), new THREE.MeshStandardMaterial({map: stickerTex}));
+            paper.position.set(2.2, 0.755, -4.3);
+            scene.add(paper);
+
+            // 9. --- ЧАСТИЦЫ: СЕРДЕЧКИ (ЕДИНЫЙ БЛОК) ---
+            const heartCount = 40; 
+            const heartGeo = new THREE.BufferGeometry();
+            const positions = new Float32Array(heartCount * 3);
+            for (let i = 0; i < heartCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 10;
+                positions[i * 3 + 1] = Math.random() * 4 + 0.5;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 10;
+            }
+            heartGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            // Рисуем текстуру сердца
+            const hCanvas = document.createElement('canvas');
+            hCanvas.width = 128; hCanvas.height = 128;
+            const hCtx = hCanvas.getContext('2d');
+            const cx = 64, cy = 45, cs = 32;
+
+            function drawHeart(ctx, x, y, s) {
+                ctx.beginPath();
+                ctx.moveTo(x, y + s);
+                ctx.bezierCurveTo(x, y, x - s, y, x - s, y + s);
+                ctx.bezierCurveTo(x - s, y + s * 2, x, y + s * 3, x, y + s * 3);
+                ctx.bezierCurveTo(x, y + s * 3, x + s, y + s * 2, x + s, y + s);
+                ctx.bezierCurveTo(x + s, y, x, y, x, y + s);
+                ctx.closePath();
+            }
+
+            // Заливка КРАСНЫМ
+            hCtx.fillStyle = '#FF0000';
+            drawHeart(hCtx, cx, cy, cs);
+            hCtx.fill();
+
+            // Обводка РОЗОВЫМ
+            hCtx.strokeStyle = '#FF69B4';
+            hCtx.lineWidth = 10;
+            hCtx.lineJoin = 'round';
+            hCtx.stroke();
+
+            const heartMaterial = new THREE.PointsMaterial({
+                size: 0.6,
+                map: new THREE.CanvasTexture(hCanvas),
+                transparent: true,
+                blending: THREE.NormalBlending,
+                depthWrite: false,
+                depthTest: false 
+            });
+
+            hearts = new THREE.Points(heartGeo, heartMaterial);
+            scene.add(hearts);
+        }   
+
+        function loadNekoModel() {
+            const loader = new GLTFLoader();
+            loader.load('https://raw.githubusercontent.com/fluttershy-2014/experiments/main/NekoNyav2.glb', (gltf) => {
+                nekoModel = gltf.scene;
+                if (gltf.animations?.length) {
+                    mixer = new THREE.AnimationMixer(nekoModel);
+                    mixer.clipAction(gltf.animations[0]).play();
+                }
+                nekoModel.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        child.material.side = THREE.FrontSide;
+                        child.material.emissive = new THREE.Color(0x000000);
+                        child.material.metalness = 0;
+                        child.material.roughness = 0.8;
+                        child.material.transparent = true;
+                        child.material.alphaTest = 0.5;
+                        child.material.depthWrite = true;
+                    }
+                });
+                nekoModel.scale.set(1.1, 1.1, 1.1);
+                scene.add(nekoModel);
+            });
+        }
+
+        function updateBlinking(dt) {
+            if (!nekoModel) return;
+            blinkTimer += dt;
+            
+            if (blinkTimer >= nextBlink) {
+                nekoModel.traverse(c => {
+                    if (c.morphTargetDictionary) {
+                        const idxL = c.morphTargetDictionary['Fcl_EYE_Close_L'];
+                        const idxR = c.morphTargetDictionary['Fcl_EYE_Close_R'];
+                        
+                        if (idxL !== undefined && idxR !== undefined) {
+                            if (blinkState === 0) blinkState = 1;
+
+                            if (blinkState === 1) { // Плавное закрытие
+                                // Уменьшил с 12 до 4 для плавности
+                                c.morphTargetInfluences[idxL] += dt * 4; 
+                                if (c.morphTargetInfluences[idxL] >= 1) {
+                                    c.morphTargetInfluences[idxL] = 1;
+                                    blinkState = 2;
+                                }
+                            } else if (blinkState === 2) { // Плавное открытие
+                                // Уменьшил с 10 до 3.5
+                                c.morphTargetInfluences[idxL] -= dt * 3.5; 
+                                if (c.morphTargetInfluences[idxL] <= 0) {
+                                    c.morphTargetInfluences[idxL] = 0;
+                                    blinkState = 0;
+                                    blinkTimer = 0;
+                                    // Рандомная пауза между морганиями (от 2 до 6 секунд)
+                                    nextBlink = 2 + Math.random() * 4; 
+                                }
+                            }
+                            c.morphTargetInfluences[idxR] = c.morphTargetInfluences[idxL];
+                        }
+                    }
+                });
+            }
+        }
+
+        function startGame() {
+            isGameOver = false;
+            document.getElementById('menu').style.display = 'none';
+            document.getElementById('timer-container').style.display = 'block';
+            if (!window.bgMusic && listener) {
+                window.bgMusic = new THREE.Audio(listener);
+                audioLoader.load('ambience.mp3', (buffer) => {
+                    window.bgMusic.setBuffer(buffer);
+                    window.bgMusic.setLoop(true);
+                    window.bgMusic.setVolume(0.3);
+                    window.bgMusic.play();
+                });
+            }
+            if (!('ontouchstart' in window)) controls.lock();
+            else document.getElementById('mobile-ui').style.display = 'block';
+
+            timeLeft = 60;
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (!isGameOver) {
+                    timeLeft--;
+                    document.getElementById('timer').innerText = timeLeft;
+                    if (timeLeft <= 0) endGame();
+                }
+            }, 1000);
+        }
+
+        async function endGame() {
+            if (isGameOver && timeLeft <= 0) return; 
+            isGameOver = true; closeNote(); clearInterval(timerInterval);
+            if (controls) controls.unlock();
+            const ringSound = new THREE.Audio(listener); 
+            const playTone = () => new Promise(resolve => {
+                audioLoader.load('call.mp3', (buffer) => {
+                    ringSound.setBuffer(buffer); ringSound.setVolume(0.6); ringSound.play();
+                    setTimeout(resolve, 6000);
+                }, undefined, () => resolve());
+            });
+            await playTone(); await playTone();
+            const win = Math.random() > 0.5;
+            const ov = document.getElementById('overlay');
+            ov.style.display = 'flex';
+            ov.style.background = win ? "rgba(255, 100, 180, 0.85)" : "rgba(20, 0, 30, 0.95)";
+            document.getElementById('ending-title').innerText = win ? "Вы вместе." : "Тебя бросили… ;_ ;";
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            if (mixer) mixer.update(delta);
+            updateBlinking(delta);
+            if (!isGameOver && (controls.isLocked || 'ontouchstart' in window)) {
+                velocity.x -= velocity.x * 10.0 * 0.016; velocity.z -= velocity.z * 10.0 * 0.016;
+                direction.z = Number(keys.w) - Number(keys.s); direction.x = Number(keys.d) - Number(keys.a);
+                direction.normalize();
+                if (keys.w || keys.s) velocity.z -= direction.z * 12.0 * 0.016;
+                if (keys.a || keys.d) velocity.x += direction.x * 12.0 * 0.016;
+                const oldPos = camera.position.clone();
+                controls.moveRight(velocity.x * 0.016); controls.moveForward(-velocity.z * 0.016);
+                const pBox = new THREE.Box3().setFromCenterAndSize(camera.position, new THREE.Vector3(1.2, 1.8, 1.2));
+                for (let obj of collidables) if (new THREE.Box3().setFromObject(obj).intersectsBox(pBox)) camera.position.copy(oldPos);
+                if (nekoModel) {
+                    nekoModel.position.copy(camera.position); nekoModel.position.y -= 1.68; 
+                    const lookDir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+                    nekoModel.position.addScaledVector(lookDir, -0.2); nekoModel.rotation.y = camera.rotation.y + Math.PI;
+                }
+            }
+            renderer.render(scene, camera);
+            if (!isReading && !isGameOver && controls.isLocked) {
+                raycaster.setFromCamera(mouse, camera);
+                const hits = raycaster.intersectObject(paper);
+                document.getElementById('note-prompt').style.display = (hits.length > 0 && hits[0].distance < interactDist) ? 'block' : 'none';
+            }
+
+            // Анимация частиц
+            if (hearts) {
+                const time = Date.now() * 0.001;
+                const pos = hearts.geometry.attributes.position.array;
+                for (let i = 0; i < pos.length; i += 3) {
+                    // 1. Плавно вверх-вниз
+                    pos[i + 1] += Math.sin(time + pos[i]) * 0.0025;
+                    // 2. Добавим легкое покачивание влево-вправо (X)
+                    pos[i] += Math.cos(time + pos[i+1]) * 0.001;
+                }
+                hearts.geometry.attributes.position.needsUpdate = true;
+            }
+        }
+
+        function tryReadNote() {
+            raycaster.setFromCamera(mouse, camera);
+            const hits = raycaster.intersectObject(paper);
+            if (hits.length > 0 && hits[0].distance < interactDist) showNote();
+        }
+
+        function showNote() {
+            isReading = true; 
+            controls.unlock();
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('ru-RU');
+            const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            
+            document.getElementById('note-ui').innerHTML = `
+                <div id="note-header">🌸 Памятка Мии 🌸</div>
+                <div id="note-content">
+                    <p style="margin-top:0; color: #ff66a3;"><i>${dateStr} | ${timeStr}</i></p>
+                    <div style="font-size: 18px; color: #555;">
+                        Сегодня особенный день... <br>
+                        Я очень жду его звонка. 
+                        <span style="color: #ff4d94;">❤</span><br>
+                        Он обязательно позвонит!
+                    </div>
+                    <p style="font-size: 11px; color: #aaa; margin-top: 20px;">(ЛКМ, чтобы отложить)</p>
+                </div>
+            `;
+            document.getElementById('note-ui').style.display = 'block';
+        }
+
+        function closeNote() { isReading = false; document.getElementById('note-ui').style.display = 'none'; controls.lock(); }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
