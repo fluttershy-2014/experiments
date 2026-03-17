@@ -212,6 +212,13 @@
 
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2(0, 0);
+
+            document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                clock.stop();
+                clock.start(); // Сбрасываем время, чтобы дельта не была гигантской
+                }
+            });
         }
 
         function createObject(geo, mat, pos) {
@@ -511,6 +518,12 @@
             if (isGameOver && timeLeft <= 0) return; 
             isGameOver = true; closeNote(); clearInterval(timerInterval);
             if (controls) controls.unlock();
+
+            // ФИКС: Останавливаем фоновую музыку перед звонком
+            if (bgMusic && bgMusic.isPlaying) {
+                bgMusic.stop();
+            }
+
             const ringSound = new THREE.Audio(listener); 
             const playTone = () => new Promise(resolve => {
                 audioLoader.load('call.mp3', (buffer) => {
@@ -528,9 +541,14 @@
 
         function animate() {
             requestAnimationFrame(animate);
+            
+            // ФИКС: Если вкладка неактивна, не считаем дельту и логику, чтобы глаза не глючили
+            if (document.hidden) return;
+
             const delta = clock.getDelta();
             if (mixer) mixer.update(delta);
             updateBlinking(delta);
+            
             if (!isGameOver && (controls.isLocked || 'ontouchstart' in window)) {
                 velocity.x -= velocity.x * 10.0 * 0.016; velocity.z -= velocity.z * 10.0 * 0.016;
                 direction.z = Number(keys.w) - Number(keys.s); direction.x = Number(keys.d) - Number(keys.a);
@@ -559,9 +577,7 @@
                 const time = Date.now() * 0.001;
                 const pos = hearts.geometry.attributes.position.array;
                 for (let i = 0; i < pos.length; i += 3) {
-                    // 1. Плавно вверх-вниз
                     pos[i + 1] += Math.sin(time + pos[i]) * 0.0025;
-                    // 2. Добавим легкое покачивание влево-вправо (X)
                     pos[i] += Math.cos(time + pos[i+1]) * 0.001;
                 }
                 hearts.geometry.attributes.position.needsUpdate = true;
