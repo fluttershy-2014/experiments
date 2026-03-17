@@ -279,31 +279,29 @@
             clearInterval(timerInterval);
             if (controls) controls.unlock();
             
-            // 1. Останавливаем фоновую музыку
             if (window.bgMusic && window.bgMusic.isPlaying) window.bgMusic.stop();
 
             const audioLoader = new THREE.AudioLoader();
-            // Создаем один объект для гудков, чтобы его можно было остановить
+            // Выносим плеер гудка в константу, чтобы иметь к нему доступ
             const ringSound = new THREE.Audio(listener); 
             
             const playTone = () => {
                 return new Promise(resolve => {
-                    const ringUrl = 'call.mp3'; // Твой файл на GitHub
+                    const ringUrl = 'call.mp3'; // Путь к твоему файлу на GitHub
                     audioLoader.load(ringUrl, (buffer) => {
                         ringSound.setBuffer(buffer);
                         ringSound.setVolume(0.6);
                         ringSound.play();
-                        // Ждем 3 секунды (длительность гудка)
-                        setTimeout(resolve, 3000); 
+                        setTimeout(resolve, 3000); // Длительность гудка
                     }, undefined, () => resolve());
                 });
             };
 
-            // Проигрываем 2 гудка
+            // Ждем завершения двух гудков
             await playTone();
             await playTone();
 
-            // 2. ВАЖНО: Останавливаем гудок перед показом финала
+            // ОСТАНАВЛИВАЕМ ЗВУК ПЕРЕД ФИНАЛОМ
             if (ringSound.isPlaying) ringSound.stop();
 
             const win = Math.random() > 0.5;
