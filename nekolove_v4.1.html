@@ -515,28 +515,46 @@
         }
 
         async function endGame() {
-            if (isGameOver && timeLeft <= 0) return; 
-            isGameOver = true; closeNote(); clearInterval(timerInterval);
+            // Если игра уже кончилась, не запускаем логику заново
+            if (isGameOver) return; 
+            isGameOver = true; 
+
+            closeNote(); 
+            clearInterval(timerInterval);
             if (controls) controls.unlock();
 
-            // ФИКС: Останавливаем фоновую музыку перед звонком
+            // ФИКС: Гасим фоновую музыку, чтобы она не орала во время гудков
             if (bgMusic && bgMusic.isPlaying) {
                 bgMusic.stop();
             }
 
             const ringSound = new THREE.Audio(listener); 
+            
             const playTone = () => new Promise(resolve => {
                 audioLoader.load('call.mp3', (buffer) => {
-                    ringSound.setBuffer(buffer); ringSound.setVolume(0.6); ringSound.play();
+                    ringSound.setBuffer(buffer); 
+                    ringSound.setVolume(0.6); 
+                    ringSound.play();
+                    
+                    // Ждем 6 секунд (длина одного гудка), потом продолжаем
                     setTimeout(resolve, 6000);
                 }, undefined, () => resolve());
             });
-            await playTone(); await playTone();
+
+            // Проигрываем два гудка перед тем, как показать финал
+            await playTone(); 
+            await playTone();
+
+            // Рандомный выбор концовки
             const win = Math.random() > 0.5;
             const ov = document.getElementById('overlay');
+            
             ov.style.display = 'flex';
             ov.style.background = win ? "rgba(255, 100, 180, 0.85)" : "rgba(20, 0, 30, 0.95)";
-            document.getElementById('ending-title').innerText = win ? "Вы вместе." : "Тебя бросили… ;_ ;";
+            
+            document.getElementById('ending-title').innerText = win ? 
+                "Вы вместе." : 
+                "Тебя бросили… ;_ ;";
         }
 
         function animate() {
