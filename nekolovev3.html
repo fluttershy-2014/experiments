@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Влюбленная Неко - Финальная Сборка</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background: #ffe6f0; }
+        canvas { display: block; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
+        #menu { pointer-events: auto; text-align: center; background: rgba(255, 255, 255, 0.95); padding: 40px; border-radius: 30px; box-shadow: 0 0 30px rgba(255, 105, 180, 0.6); border: 3px solid #ff4d94; }
+        h1 { color: #ff0066; font-size: 48px; margin-bottom: 10px; }
+        button { padding: 15px 40px; font-size: 20px; background: #ff4d94; color: white; border: none; border-radius: 50px; cursor: pointer; transition: 0.3s; pointer-events: auto; }
+        button:hover { background: #ff0066; transform: scale(1.05); }
+        #timer-container { position: absolute; top: 20px; left: 20px; background: rgba(255, 255, 255, 0.9); border: 3px solid #ff0066; border-radius: 15px; padding: 10px 20px; display: none; }
+        #timer { font-size: 32px; color: #ff0000; font-weight: bold; text-align: center; }
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; background: rgba(0,0,0,0.5); }
+        #ending-title { font-size: 50px; color: white; font-weight: bold; margin-bottom: 20px; text-shadow: 0 0 15px black; }
+
+        /* Зоны для мобильного управления */
+        #mobile-ui { position: absolute; bottom: 0; left: 0; width: 100%; height: 100%; z-index: 5; display: none; pointer-events: none; }
+        #joy-zone, #look-zone { pointer-events: auto; }
+        #joy-zone { position: absolute; bottom: 40px; left: 40px; width: 100px; height: 100px; background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; }
+        #look-zone { position: absolute; top: 0; right: 0; width: 60%; height: 100%; }
+    </style>
+</head>
+<body>
+    <div id="ui-layer">
+        <div id="mobile-ui">
+            <div id="joy-zone"></div>
+            <div id="look-zone"></div>
+        </div>
+        <div id="menu">
+            <h1>Влюбленная Неко</h1>
+            <p style="color: #ff4d94; font-weight: bold;">Осталось 60 секунд до звонка...</p>
+            <p>W,A,S,D — Ходьба | Мышь — Обзор</p>
+            <p style="font-style: italic; color: #777;">Твоя судьба решится сейчас.</p>
+            <button id="start-btn">Начать игру</button>
+        </div>
+        <div id="timer-container">
+            <div style="font-size: 18px; color: #ff0066; text-align: center; font-weight: bold;">До звонка:</div>
+            <div id="timer">60</div>
+        </div>
+        <div id="overlay">
+            <div id="ending-title"></div>
+            <button onclick="location.reload()">Играть заново</button>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        import { Reflector } from 'three/addons/objects/Reflector.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        let scene, camera, renderer, controls, nekoModel, mixer, timerInterval;
+        let timeLeft = 60;
+        let isGameOver = false;
+        let keys = { w: false, a: false, s: false, d: false };
+        let collidables = [];
+        const clock = new THREE.Clock();
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        let lastT = 0;
+
+        // Аудио переменные
+        let listener, bgMusic, audioLoader;
+		let isEndingStarted = false; // Защита от зависания при повторном вызове
+
+        init();
+        animate();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xfff0f5);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.6, 3);
+
+            // Инициализация звука — добавляем «уши» камере
+            listener = new THREE.AudioListener();
+            camera.add(listener);
+            audioLoader = new THREE.AudioLoader();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.toneMapping = THREE.NoToneMapping; 
+            document.body.appendChild(renderer.domElement);
+
+            controls = new PointerLockControls(camera, document.body);
+
+            window.addEventListener('keydown', (e) => { 
+                const k = e.code.toLowerCase().replace('key','');
+                if(k in keys) keys[k] = true; 
+            });
+            window.addEventListener('keyup', (e) => { 
+                const k = e.code.toLowerCase().replace('key','');
+                if(k in keys) keys[k] = false; 
+            });
+            
+            window.addEventListener('mousedown', () => {
+                if (!controls.isLocked && !isGameOver && document.getElementById('menu').style.display === 'none') {
+                    controls.lock();
+                }
+            });
+
+            scene.add(new THREE.AmbientLight(0xffffff, 1.8));
+            const sun = new THREE.DirectionalLight(0xffffff, 0.5);
+            sun.position.set(5, 10, 5);
+            scene.add(sun);
+
+            createRoom();
+            loadNekoModel();
+
+            const startBtn = document.getElementById('start-btn');
+            startBtn.addEventListener('click', startGame);
+
+            // Мобильное управление (оставляем как было, ничего не вырезаем)
+            if ('ontouchstart' in window) {
+                document.getElementById('mobile-ui').style.display = 'block';
+                const jZ = document.getElementById('joy-zone');
+                const lZ = document.getElementById('look-zone');
+                jZ.addEventListener('touchstart', (e) => { e.preventDefault(); keys.w = true; });
+                jZ.addEventListener('touchend', (e) => { e.preventDefault(); keys.w = false; });
+                lZ.addEventListener('touchstart', (e) => { lastT = e.touches[0].clientX; });
+                lZ.addEventListener('touchmove', (e) => {
+                    const dx = e.touches[0].clientX - lastT;
+                    lastT = e.touches[0].clientX;
+                    camera.rotation.y -= dx * 0.005;
+                });
+            }
+        }
+
+        function createObject(geo, mat, pos) {
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(...pos);
+            scene.add(mesh);
+            collidables.push(mesh);
+            return mesh;
+        }
+
+        function createRoom() {
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({color: 0xeeeeee}));
+            floor.rotation.x = -Math.PI/2;
+            scene.add(floor);
+
+            const wallMat = new THREE.MeshStandardMaterial({color: 0xffccd5});
+            [[-5,2,0, 0.2,4,10], [5,2,0, 0.2,4,10], [0,2,-5, 10,4,0.2], [0,2,5, 10,4,0.2]].forEach(p => {
+                const w = new THREE.Mesh(new THREE.BoxGeometry(p[3], p[4], p[5]), wallMat);
+                w.position.set(p[0], p[1], p[2]);
+                scene.add(w);
+                collidables.push(w);
+            });
+
+            // Кровать
+            createObject(new THREE.BoxGeometry(2.5, 0.2, 4.5), new THREE.MeshStandardMaterial({color: 0xffc1e3}), [-3, 0.7, -2.5]);
+            createObject(new THREE.BoxGeometry(2.6, 0.6, 4.6), new THREE.MeshStandardMaterial({color: 0xffffff}), [-3, 0.3, -2.5]);
+
+            // СТОЛ С ТЕКСТУРОЙ ДЕРЕВА
+            const shelfGroup = new THREE.Group();
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#8B4513'; ctx.fillRect(0, 0, 64, 64);
+            ctx.strokeStyle = '#4A2508'; ctx.lineWidth = 10; ctx.strokeRect(0, 0, 64, 64);
+            const woodTexture = new THREE.CanvasTexture(canvas);
+            const woodMat = new THREE.MeshStandardMaterial({ map: woodTexture, roughness: 0.8 });
+
+            const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.1, 0.8), woodMat);
+            shelf.position.y = 0.7; 
+            shelfGroup.add(shelf);
+
+            const legGeo = new THREE.BoxGeometry(0.05, 0.7, 0.05);
+            [[0.55, 0.35, 0.35], [-0.55, 0.35, 0.35], [0.55, 0.35, -0.35], [-0.55, 0.35, -0.35]].forEach(p => {
+                const leg = new THREE.Mesh(legGeo, woodMat);
+                leg.position.set(...p);
+                shelfGroup.add(leg);
+            });
+            shelfGroup.position.set(2.5, 0, -4.5); 
+            scene.add(shelfGroup);
+
+            const shelfHitbox = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.8), new THREE.MeshBasicMaterial({visible: false}));
+            shelfHitbox.position.set(2.5, 0.4, -4.5);
+            scene.add(shelfHitbox);
+            collidables.push(shelfHitbox);
+
+            const mirror = new Reflector(new THREE.PlaneGeometry(2.5, 3.5), {
+                textureWidth: window.innerWidth * window.devicePixelRatio,
+                textureHeight: window.innerHeight * window.devicePixelRatio,
+                color: 0x888888
+            });
+            mirror.position.set(0, 1.8, -4.89);
+            scene.add(mirror);
+        }
+
+        function loadNekoModel() {
+            const loader = new GLTFLoader();
+            loader.load('https://raw.githubusercontent.com/fluttershy-2014/experiments/main/NekoNyav2.glb', (gltf) => {
+                nekoModel = gltf.scene;
+                if (gltf.animations && gltf.animations.length > 0) {
+                    mixer = new THREE.AnimationMixer(nekoModel);
+                    mixer.clipAction(gltf.animations[0]).play();
+                }
+
+                // ВОЗВРАЩАЕМ ОРИГИНАЛЬНУЮ ПОКРАСКУ (ЧТОБЫ НЕ БЫЛА ЧЕРНОЙ)
+                nekoModel.traverse(child => {
+                    if (child.isMesh) {
+                        child.material.side = THREE.FrontSide;
+                        child.material.metalness = 0;
+                        child.material.roughness = 1;
+                        if (child.material.map) {
+                            child.material.emissive = new THREE.Color(0xffffff);
+                            child.material.emissiveMap = child.material.map;
+                            child.material.emissiveIntensity = 0.2; 
+                        }
+                        child.material.transparent = true;
+                        child.material.alphaTest = 0.5;
+                        child.material.depthWrite = true;
+                    }
+                });
+                nekoModel.scale.set(1.1, 1.1, 1.1);
+                scene.add(nekoModel);
+            });
+        }
+
+        function startGame() {
+            isGameOver = false;
+            document.getElementById('menu').style.display = 'none';
+            document.getElementById('timer-container').style.display = 'block';
+
+            // --- ЗАГРУЗКА ТВОЕЙ ФОНОВОЙ МУЗЫКИ ---
+            if (!window.bgMusic && typeof THREE !== 'undefined' && listener) {
+                window.bgMusic = new THREE.Audio(listener);
+                const audioLoader = new THREE.AudioLoader();
+                const bgUrl = 'ambience.mp3';
+                
+                audioLoader.load(bgUrl, (buffer) => {
+                    window.bgMusic.setBuffer(buffer);
+                    window.bgMusic.setLoop(true);
+                    window.bgMusic.setVolume(0.3);
+                    window.bgMusic.play();
+                }, undefined, (err) => console.error("Ошибка загрузки фона:", err));
+            }
+
+            if (!('ontouchstart' in window)) {
+                controls.lock();
+            } else {
+                const mUI = document.getElementById('mobile-ui');
+                if (mUI) {
+                    mUI.style.display = 'block'; 
+                    mUI.style.zIndex = '100';
+                }
+            }
+
+            timeLeft = 60;
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (!isGameOver) {
+                    timeLeft--;
+                    document.getElementById('timer').innerText = timeLeft;
+                    if (timeLeft <= 0) endGame();
+                }
+            }, 1000);
+        }
+
+        async function endGame() {
+            if (isGameOver && timeLeft <= 0) return; 
+            isGameOver = true;
+            clearInterval(timerInterval);
+            if (controls) controls.unlock();
+            
+            // Останавливаем фон
+            if (window.bgMusic && window.bgMusic.isPlaying) window.bgMusic.stop();
+
+            const audioLoader = new THREE.AudioLoader();
+            
+            // Функция проигрывания твоего гудка
+            const playTone = () => {
+                return new Promise(resolve => {
+                    const ringUrl = 'call.mp3';
+                    audioLoader.load(ringUrl, (buffer) => {
+                        const ringSound = new THREE.Audio(listener);
+                        ringSound.setBuffer(buffer);
+                        ringSound.setVolume(0.6);
+                        ringSound.play();
+                        setTimeout(resolve, 3000); // Длительность ожидания между гудками
+                    }, undefined, () => resolve()); // Если ошибка, просто идем дальше
+                });
+            };
+
+            // Проигрываем 2 гудка перед финалом
+            await playTone();
+            await playTone();
+
+            const win = Math.random() > 0.5;
+            const ov = document.getElementById('overlay');
+            if (ov) {
+                ov.style.display = 'flex';
+                ov.style.background = win ? "rgba(255, 100, 180, 0.85)" : "rgba(20, 0, 30, 0.95)";
+                document.getElementById('ending-title').innerText = win ? "Вы вместе." : "Тебя бросили… ;_;";
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            if (mixer) mixer.update(delta);
+
+            if (!isGameOver && (controls.isLocked || 'ontouchstart' in window)) {
+                velocity.x -= velocity.x * 10.0 * 0.016;
+                velocity.z -= velocity.z * 10.0 * 0.016;
+                direction.z = Number(keys.w) - Number(keys.s);
+                direction.x = Number(keys.d) - Number(keys.a);
+                direction.normalize();
+
+                if (keys.w || keys.s) velocity.z -= direction.z * 22.0 * 0.016;
+                if (keys.a || keys.d) velocity.x += direction.x * 22.0 * 0.016;
+
+                const oldPos = camera.position.clone();
+                controls.moveRight(velocity.x * 0.016);
+                controls.moveForward(-velocity.z * 0.016);
+
+                const playerBox = new THREE.Box3().setFromCenterAndSize(camera.position, new THREE.Vector3(0.6, 1.8, 0.6));
+                for (let obj of collidables) {
+                    if (new THREE.Box3().setFromObject(obj).intersectsBox(playerBox)) {
+                        camera.position.copy(oldPos);
+                    }
+                }
+
+                if (nekoModel) {
+                    nekoModel.position.copy(camera.position);
+                    nekoModel.position.y -= 1.5;
+                    const lookDir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+                    nekoModel.position.addScaledVector(lookDir, -1.0);
+                    nekoModel.rotation.y = camera.rotation.y + Math.PI;
+                }
+            }
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
