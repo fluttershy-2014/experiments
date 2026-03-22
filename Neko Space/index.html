@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>NekoSpace: Reach the Stars🐾</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+        /* Эффект свечения для всей игры, ня! */
+        canvas { filter: blur(0.5px) contrast(1.1) brightness(1.1); }
+        
+        #ui { position: absolute; top: 20px; left: 20px; color: #ff99cc; pointer-events: none; z-index: 10; }
+        .stat { font-size: 28px; font-weight: bold; text-shadow: 0 0 10px #ff0066; margin-bottom: 5px; }
+        #instructions { position: absolute; bottom: 20px; width: 100%; text-align: center; color: #fff; font-size: 18px; opacity: 0.8; z-index: 10; text-shadow: 0 0 5px #fff;}
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+</head>
+<body>
+    <div id="ui">
+        <div class="stat">СУШИ: <span id="score">0</span> / 500</div>
+        <div class="stat" style="font-size: 22px; color: #fff;">ВРЕМЯ: <span id="timer">00:00</span></div>
+    </div>
+    
+    <div id="instructions">WASD — бег, Пробел — Двойной прыжок, Мышь — обзор 🌟</div>
+
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.150.1/build/three.module.js"
+        }
+    }
+    </script>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>
