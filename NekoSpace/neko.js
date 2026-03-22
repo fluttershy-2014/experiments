@@ -23,18 +23,18 @@ export class Neko {
         // ЗВУКИ — Исправлено залипание через pool и спрайты
         try {
             this.soundMeow = new Howl({ 
-                src: ['https://zvukipro.com/uploads/files/2020-03/1584776195_d6b8a8f21491d95.mp3'], 
+                src: ['./sounds/suchi.mp3'], 
                 volume: 0.15,
                 pool: 10, // Теперь звуки могут накладываться, не прерываясь
                 sprite: { short: [0, 500] } // Короткий "пик" для бодрости
             });
             this.soundJump = new Howl({ 
-                src: ['https://zvukipro.com/uploads/files/2018-10/1539083199_rubberband-02.mp3'], 
+                src: ['./sounds/jump.mp3'], 
                 volume: 0.15,
                 pool: 5 
             });
             this.soundCheckpoint = new Howl({ 
-                src: ['https://zvukipro.com/uploads/files/2020-07/1595047389_45435a970c52904.mp3'], 
+                src: ['./sounds/checkpoint.mp3'], 
                 volume: 0.4,
                 pool: 2
             });

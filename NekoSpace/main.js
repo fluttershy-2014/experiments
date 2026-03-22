@@ -6,7 +6,7 @@ import { StartMenu } from './start.js';
 
 // ФОНОВАЯ МУЗЫКА
 const bgMusic = new Howl({
-    src: ['https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3'],
+    src: ['./sounds/mus.mp3'],
     autoplay: false, 
     loop: true,
     volume: 0.1
